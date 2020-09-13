@@ -1,0 +1,42 @@
+﻿@page "/settings"
+
+<h3>Settings</h3>
+<p></p>
+
+<p></p>
+For BlazorTube to get video duration, a <a href="https://developers.google.com/youtube/v3/getting-started">Youtube Data API V3 key</a> is required.
+<p></p>
+<textarea @bind="API_KEY" rows="1" cols="50" /> Yotube API Key
+
+<br />
+
+<p></p>
+
+
+<button @onclick="SaveSettings">Save</button>
+
+
+
+
+@inject Blazored.LocalStorage.ILocalStorageService localStorage
+
+@code {
+
+    public static string API_KEY = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Init();
+    }
+
+    protected async Task SaveSettings()
+    {
+        await localStorage.SetItemAsync<string>("api", Settings.API_KEY);
+    }
+
+    protected async Task Init()
+    {
+        var api = await localStorage.GetItemAsync<string>("api");
+        Settings.API_KEY = api;
+    }
+}

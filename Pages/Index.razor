@@ -1,0 +1,271 @@
+﻿@page "/"
+
+@using static JsonClasses;
+
+@inject HttpClient Http
+
+
+<h1>Welcome</h1>
+
+
+
+Welcome to BlazorTube. A web app built to analyze your Youtube watch history.
+<p></p>
+<h2> Retreiving your history file </h2>
+<p></p>
+For BlazorTube to work, you need to supply watch_history.json from <a href="https://takeout.google.com">Google Takeout</a>.
+<br />
+<b>Note: </b>you must change the format from HTML to JSON when creating an export.
+<p></p>
+<p>Concerned about privacy? This project is <a href="www.github.com">open source</a> and runs client-side in your browser using <a href="https://dotnet.microsoft.com/apps/aspnet/web-apps/blazor">webassembly</a></p>
+
+<FileSelect @ref="fileSelect" FilesChanged="FilesChangedHandler" />
+<button @onclick="@(() => fileSelect.SelectFiles())">Select watch-history.json</button>
+
+@if (videoData.Count > 0)
+{
+    <button @onclick="@(() => BatchVideos())">Calculate Watch Time</button>
+}
+
+<p></p>
+@if (activeRequests > 0 || (loaded==true&&videoDataDisplay.Count==0))
+{
+    <span class="cssload-loader"><span class="cssload-loader-inner"></span></span>
+}
+
+
+@code
+{
+
+    public static Dictionary<String, int> channelWatchCount = new Dictionary<string, int>();
+    public static Dictionary<String, int> videoWatchCount = new Dictionary<string, int>();
+    public static Dictionary<string, TimeSpan> channelWatchDuration = new Dictionary<string, TimeSpan>();
+    public static IEnumerable<KeyValuePair<string, VideoData>> displayList; //render component
+
+    public static List<Entry_Data> entryList = new List<Entry_Data>();
+    bool loaded = false;
+
+    //Load settings
+    @inject Blazored.LocalStorage.ILocalStorageService localStorage
+    protected override async Task OnInitializedAsync()
+    {
+        var api = await localStorage.GetItemAsync<string>("api");
+        Settings.API_KEY = api;
+    }
+
+    FileSelect fileSelect;
+    async Task FilesChangedHandler(FileSelectChangeArgs args)
+    {
+        entryList.Clear();
+        channelWatchCount.Clear();
+        videoData.Clear();
+        foreach(var value in channelWatchDuration.Keys.ToList()) channelWatchDuration[value] = TimeSpan.Zero;
+
+        var file = args.Files.First();
+        loaded = true;
+        StateHasChanged();
+
+        var fileBytes = await fileSelect.GetFileBytesAsync(file.Name);
+        JsonSerializer serializer = new JsonSerializer();
+
+        entryList = JsonConvert.DeserializeObject<List<Entry_Data>>(System.Text.Encoding.Default.GetString(fileBytes));
+        foreach (var data in entryList)
+        {
+
+            string title = data.title;
+
+            if (!title.Contains("Watched a video that has been removed"))
+            {
+
+                string id = GetVideoID(data);
+                if (!videoData.ContainsKey(id)) videoData.Add(id, new VideoData());
+                videoData[id].videoID = id;
+                videoData[id].videoName = data.title;
+                videoData[id].videoWatchCount++;
+                if (data.subtitles == null) continue;
+                videoData[id].channelName = data.subtitles[0].name;
+
+                string channelName = data.subtitles[0].name;
+
+                if (!channelWatchCount.ContainsKey(channelName))
+                    channelWatchCount.Add(channelName, 1);
+                else
+                    channelWatchCount[channelName]++;
+
+                if (!channelWatchDuration.ContainsKey(channelName))
+                    channelWatchDuration.Add(channelName, new TimeSpan());
+
+                videoData[id].channelWatchCount = channelWatchCount[channelName];
+
+            }
+            else { continue; }
+        }
+
+        foreach (var video in videoData.ToList())
+        {
+            if (video.Value.channelWatchCount < 1)
+                videoData.Remove(video.Key);
+        }
+
+        displayList = videoData.OrderByDescending(x => x.Value.channelWatchCount).GroupBy(x => x.Value.channelName).Select(y => y.FirstOrDefault());
+        loaded = false;
+
+        //List<string> lines = new List<string>();
+        //foreach (var channel in channelWatchCount.OrderByDescending(x => x.Value))
+        //{
+        //    if (channel.Value > 8)
+        //    {
+        //        Console.WriteLine("{0}: {1}", channel.Key, channel.Value);
+        //        lines.Add(channel.Key + " : " + channel.Value);
+        //    }
+        //}
+
+        //Console.WriteLine("---------------------");
+        //lines.Add("---------------" + "\n");
+        //Console.WriteLine("Most Watched Video: {0}", videoWatchCount.Aggregate((x, y) => x.Value > y.Value ? x : y).Key);
+        //lines.Add("Most Watched Video: " + videoWatchCount.Aggregate((x, y) => x.Value > y.Value ? x : y).Key);
+
+    }
+
+
+
+
+    static public Dictionary<string, VideoData> videoData = new Dictionary<string, VideoData>();
+    static public Dictionary<string, VideoData> videoDataDisplay = new Dictionary<string, VideoData>();
+
+    public class VideoData
+    {
+        public string videoID { get; set; }
+        public string videoName { get; set; }
+        public string channelID { get; set; }
+        public string channelName { get; set; }
+        public int channelWatchCount { get; set; }
+        public int videoWatchCount { get; set; }
+        public string duration { get; set; }
+        public TimeSpan channelWatchTime { get; set; }
+    }
+
+
+
+    public async Task BatchVideos()
+    {
+        List<List<string>> videoBatched = new List<List<string>>();
+        int i = 1;
+
+        List<string> batch = new List<string>();
+
+        bool singleBatch = (videoData.Count < 50) ? true : false;
+        Console.WriteLine(singleBatch);
+
+        foreach (var video in videoData)
+        {
+            string id = video.Key;
+            batch.Add(id);
+            i++;
+
+            if (i == 50)
+            {
+                videoBatched.Add(batch);
+                i = 1;
+                batch = new List<string>();
+            }
+
+            if (singleBatch && i == videoData.Count)
+            {
+                videoBatched.Add(batch);
+            }
+        }
+
+        foreach (var videoBatch in videoBatched)
+        {
+            activeRequests++;
+            await GetVideoContent(videoBatch);
+        }
+    }
+
+    public string GetVideoID(Entry_Data data)
+    {
+        //https://www.youtube.com/watch?v= --videoid--, seems to be same length and format for each entry in json, no need for regex
+        //32 length url, 11 length video id
+        var id = "";
+        try
+        {
+            id = data.titleUrl.Substring(32, 11);
+        }
+        catch { return ""; }
+
+        return id;
+    }
+
+    int activeRequests = 0;
+
+    public async Task GetVideoContent(List<string> videoIds)
+    {
+        if (videoIds.Count > 50) { Console.WriteLine("Video batches must be <= 50"); return; }
+        string videoIdList = "";
+        foreach (var video in videoIds)
+        {
+            videoIdList += video + ",";
+        }
+        var response = await Http.GetFromJsonAsync<VideoDetailsRoot>("https://www.googleapis.com/youtube/v3/videos?id=" + videoIdList + "&part=contentDetails&key=" + Settings.API_KEY);
+        Console.WriteLine(response);
+        foreach (var item in response.items)
+        {
+            if (videoData.ContainsKey(item.id))
+            {
+                videoData[item.id].duration = item.contentDetails.duration;
+                string channelName = videoData[item.id].channelName;
+                if (!channelWatchDuration.ContainsKey(channelName))
+                    channelWatchDuration.Add(channelName, System.Xml.XmlConvert.ToTimeSpan(videoData[item.id].duration));
+                else
+                {
+                    try
+                    {
+                        var duration = videoData[item.id].duration;
+                        TimeSpan time = System.Xml.XmlConvert.ToTimeSpan(duration);
+                        channelWatchDuration[channelName] = channelWatchDuration[channelName].Add(time);
+                        StateHasChanged();
+                    }
+                    catch (Exception e) { }
+                }
+            }
+        }
+        activeRequests--;
+    }
+}
+
+
+@if (videoData.Count > 0)
+{
+    <p></p>
+    <p>Analyzed @entryList.Count videos across @channelWatchCount.Count channels</p>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Channel Name</th>
+                <th>Watch Count</th>
+                <th>Watch Time</th>
+
+            </tr>
+        </thead>
+        <tbody>
+
+            @foreach (var item in displayList)
+            {
+                <tr>
+                    <td>@item.Value.channelName</td>
+                    <td>@item.Value.channelWatchCount</td>
+                    <td>@channelWatchDuration[item.Value.channelName].ToString()</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else if (loaded == true)
+{
+    <p></p>
+    <p><b>Loading... this could take a second</b></p>
+}
+
+
+
