@@ -1,5 +1,5 @@
 ﻿<div class="top-row pl-4 navbar navbar-dark">
-    <img src = "yt_logo_mono_dark.png"  style='height: 75%' /><a class="navbar-brand" href="">BlazorTube</a>
+    <img src = "yt_logo_mono_dark.png"  style='height: 75%' /><a class="navbar-brand" href="/blazortube">BlazorTube</a>
     <button class="navbar-toggler" @onclick="ToggleNavMenu">
         <span class="navbar-toggler-icon"></span>
     </button>
@@ -8,12 +8,12 @@
 <div class="@NavMenuCssClass" @onclick="ToggleNavMenu">
     <ul class="nav flex-column">
         <li class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+            <NavLink class="nav-link" href="/blazortube" Match="NavLinkMatch.All">
                 <span class="oi oi-home" aria-hidden="true"></span> Home
             </NavLink>
         </li>
         <li class="nav-item px-3">
-            <NavLink class="nav-link" href="settings">
+            <NavLink class="nav-link" href="blazortube/settings">
                 <span class="oi oi-plus" aria-hidden="true"></span> Settings
             </NavLink>
         </li>

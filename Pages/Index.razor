@@ -1,4 +1,4 @@
-﻿@page "/"
+﻿@page "/blazortube"
 
 @using static JsonClasses;
 
@@ -44,6 +44,8 @@ For BlazorTube to work, you need to supply watch_history.json from <a href="http
 
     public static List<Entry_Data> entryList = new List<Entry_Data>();
     bool loaded = false;
+
+    string mostWatchedVideo;
 
     //Load settings
     @inject Blazored.LocalStorage.ILocalStorageService localStorage
@@ -103,31 +105,15 @@ For BlazorTube to work, you need to supply watch_history.json from <a href="http
 
         foreach (var video in videoData.ToList())
         {
-            if (video.Value.channelWatchCount < 1)
+            if (video.Value.channelWatchCount < 8)
                 videoData.Remove(video.Key);
         }
 
         displayList = videoData.OrderByDescending(x => x.Value.channelWatchCount).GroupBy(x => x.Value.channelName).Select(y => y.FirstOrDefault());
         loaded = false;
 
-        //List<string> lines = new List<string>();
-        //foreach (var channel in channelWatchCount.OrderByDescending(x => x.Value))
-        //{
-        //    if (channel.Value > 8)
-        //    {
-        //        Console.WriteLine("{0}: {1}", channel.Key, channel.Value);
-        //        lines.Add(channel.Key + " : " + channel.Value);
-        //    }
-        //}
-
-        //Console.WriteLine("---------------------");
-        //lines.Add("---------------" + "\n");
-        //Console.WriteLine("Most Watched Video: {0}", videoWatchCount.Aggregate((x, y) => x.Value > y.Value ? x : y).Key);
-        //lines.Add("Most Watched Video: " + videoWatchCount.Aggregate((x, y) => x.Value > y.Value ? x : y).Key);
-
+        mostWatchedVideo = displayList.OrderByDescending(x => x.Value.videoWatchCount).First().Value.videoName.Replace("Watched ", "");
     }
-
-
 
 
     static public Dictionary<string, VideoData> videoData = new Dictionary<string, VideoData>();
@@ -211,6 +197,7 @@ For BlazorTube to work, you need to supply watch_history.json from <a href="http
         Console.WriteLine(response);
         foreach (var item in response.items)
         {
+        
             if (videoData.ContainsKey(item.id))
             {
                 videoData[item.id].duration = item.contentDetails.duration;
@@ -239,6 +226,9 @@ For BlazorTube to work, you need to supply watch_history.json from <a href="http
 {
     <p></p>
     <p>Analyzed @entryList.Count videos across @channelWatchCount.Count channels</p>
+
+    <p>Most watched video: @mostWatchedVideo</p>
+
     <table class="table">
         <thead>
             <tr>
